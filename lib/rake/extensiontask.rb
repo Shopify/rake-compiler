@@ -273,10 +273,16 @@ Java extension should be preferred.
           sorted_ruby_versions = ruby_versions.sort_by do |ruby_version|
             ruby_version.split(".").collect(&:to_i)
           end
-          spec.required_ruby_version = [
-            ">= #{ruby_api_version(sorted_ruby_versions.first)}",
-            "< #{ruby_api_version(sorted_ruby_versions.last).succ}.dev"
-          ]
+
+          # introduce pessimistic version requirement syntax for skinny packaged gems
+          if sorted_ruby_versions.one?
+            spec.required_ruby_version = "~> #{ruby_api_version(sorted_ruby_versions.first)}.0"
+          else
+            spec.required_ruby_version = [
+              ">= #{ruby_api_version(sorted_ruby_versions.first)}",
+              "< #{ruby_api_version(sorted_ruby_versions.last).succ}.dev"
+            ]
+          end
 
           # set rubygems version constraints
           if Gem::Version.new(Gem::VERSION) >= Gem::Version.new("3.3.22") &&
