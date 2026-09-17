@@ -3,6 +3,7 @@ require File.expand_path(File.dirname(__FILE__) + '/../../spec_helper')
 require 'rake/extensiontask'
 require 'rbconfig'
 require 'yaml'
+require 'tmpdir'
 
 describe Rake::ExtensionTask do
   context '#new' do
@@ -618,6 +619,38 @@ describe Rake::ExtensionTask do
         spec.platform.should eq Gem::Platform::RUBY
         spec.extensions.should eq ['ext/somegem/extconf.rb']
         spec.metadata['allowed_push_host'].should eq 'http://test'
+      end
+
+      it 'should produce a pessimistic required_ruby_version when only a single Ruby version is specified' do
+        platform = "x86-mingw32"
+        ruby_cc_version = "1.8.6"
+        ENV["RUBY_CC_VERSION"] = ruby_cc_version
+
+        allow_any_instance_of(Rake::CompilerConfig).to(
+          receive(:find)
+            .with(ruby_cc_version, platform)
+            .and_return("/rubies/#{ruby_cc_version}/rbconfig.rb")
+        )
+
+        allow(Gem).to receive_message_chain(:configuration, :verbose=).and_return(true)
+
+        spec = Gem::Specification.new do |s|
+          s.name = 'my_gem'
+          s.platform = Gem::Platform::RUBY
+        end
+
+        cross_spec = nil
+        Rake::ExtensionTask.new("extension_one", spec) do |ext|
+          ext.cross_platform = platform
+          ext.cross_compile = true
+          ext.cross_compiling do |generated_spec|
+            cross_spec = generated_spec
+          end
+        end
+
+        Rake::Task["native:my_gem:#{platform}"].execute
+
+        cross_spec.required_ruby_version.should eq Gem::Requirement.new("~> 1.8.0")
       end
 
       it "should set required_rubygems_version when building a gem for `-linux-gnu` or `-linux-musl`" do
