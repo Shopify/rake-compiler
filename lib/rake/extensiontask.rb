@@ -324,6 +324,10 @@ Java extension should be preferred.
             # Do not copy any files per PackageTask, because
             # we need the files from the staging directory
             p.package_files.clear
+            if ruby_abi && p.respond_to?(:ruby_abi=)
+              p.ruby_abi = ruby_abi
+              p.package_dir = File.join(p.package_dir, ruby_abi)
+            end
           end
 
           # copy other gem files to staging directory if added by the callback

@@ -601,9 +601,14 @@ describe Rake::ExtensionTask do
             cross_specs << cross_spec
           end
         end
+
         platforms.each do |platform|
           Rake::Task["native:my_gem:#{platform}"].execute
         end
+
+        gem_targets = Rake::Task["gem"].prerequisites
+        gem_targets.collect {|target| File.dirname(target)}.should eq ["pkg", "pkg"]
+        gem_targets.collect {|target| File.extname(target)}.should eq [".gem", ".gem"]
 
         expected_required_ruby_versions = [
           Gem::Requirement.new([">= 1.8", "< 2.12.dev"]),
@@ -621,7 +626,7 @@ describe Rake::ExtensionTask do
         spec.metadata['allowed_push_host'].should eq 'http://test'
       end
 
-      it 'should produce a pessimistic required_ruby_version when only a single Ruby version is specified' do
+      it 'should set a pessimistic Ruby requirement and configure content-addressable packaging in the ABI directory' do
         platform = "x86-mingw32"
         ruby_cc_version = "1.8.6"
         ENV["RUBY_CC_VERSION"] = ruby_cc_version
@@ -648,9 +653,48 @@ describe Rake::ExtensionTask do
           end
         end
 
+        expect_any_instance_of(Gem::PackageTask)
+          .to receive(:ruby_abi=)
+          .with("1.8")
+
+        expect_any_instance_of(Gem::PackageTask)
+          .to receive(:package_dir=)
+          .with(File.join("pkg", "1.8"))
+
         Rake::Task["native:my_gem:#{platform}"].execute
 
         cross_spec.required_ruby_version.should eq Gem::Requirement.new("~> 1.8.0")
+      end
+
+      it 'should use traditional packaging for a single Ruby version when RubyGems does not support ruby_abi' do
+        platform = "x86-mingw32"
+        ruby_cc_version = "1.8.6"
+        ENV["RUBY_CC_VERSION"] = ruby_cc_version
+
+        allow_any_instance_of(Rake::CompilerConfig).to(
+          receive(:find)
+            .with(ruby_cc_version, platform)
+            .and_return("/rubies/#{ruby_cc_version}/rbconfig.rb")
+        )
+        allow(Gem).to receive_message_chain(:configuration, :verbose=).and_return(true)
+        allow_any_instance_of(Gem::PackageTask).to receive(:respond_to?).and_call_original
+        allow_any_instance_of(Gem::PackageTask).to receive(:respond_to?).with(:ruby_abi=).and_return(false)
+
+        spec = Gem::Specification.new do |s|
+          s.name = 'my_gem'
+          s.platform = Gem::Platform::RUBY
+        end
+
+        Rake::ExtensionTask.new("extension_one", spec) do |ext|
+          ext.cross_platform = platform
+          ext.cross_compile = true
+        end
+
+        Rake::Task["native:my_gem:#{platform}"].execute
+
+        gem_target = Rake::Task["gem"].prerequisites.fetch(0)
+        File.dirname(gem_target).should eq "pkg"
+        File.extname(gem_target).should eq ".gem"
       end
 
       it "should set required_rubygems_version when building a gem for `-linux-gnu` or `-linux-musl`" do
